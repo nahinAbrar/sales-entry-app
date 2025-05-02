@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import './App.css'
 
 
@@ -17,15 +17,32 @@ type Product = {
 
 function App() {
 
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  useEffect(() => {
+    if (!alertMessage) return;
+    const timer = setTimeout(() => setAlertMessage(null), 3000);
+    return () => clearTimeout(timer);
+  }, [alertMessage]);
+
+
   // SKU input
   const [skuInput, setSkuInput] = useState('');
 
   // List of added products
   const [products, setProducts] = useState<Product[]>([]);
 
+  // Barcode product search
   const handleAddBySku = async () => {
     if (!skuInput.trim()) return;
 
+    const sku = skuInput.trim();
+
+    // 1️⃣ Check for duplicate before even calling the API
+    if (products.some((p) => p.sku === sku)) {
+      setAlertMessage('Product already added');
+      return;
+    }
+    
     try {
       const res = await fetch(
         `https://front-end-task-lake.vercel.app/api/v1/purchase/get-purchase-single?search=${skuInput}`,
@@ -67,12 +84,13 @@ function App() {
     }
   };
 
-  // State to hold fetched salespeople
-  const [salesmen, setSalesmen] = useState<{ id: number; name: string }[]>([]);
+  // at top of App.tsx
+  const [salesmen, setSalesmen] = useState<
+    { firstName: string; phone: string }[]
+  >([]);
+  const [selectedSalesmanPhone, setSelectedSalesmanPhone] = useState<string>("");
 
-  // State for the selected salesman
-  const [selectedSalesmanId, setSelectedSalesmanId] = useState<number | "">("");
-
+  // getting salesman FirstName and Phone
   useEffect(() => {
     const fetchSalesmen = async () => {
       try {
@@ -86,24 +104,55 @@ function App() {
         );
         const json = await res.json();
         if (json.success) {
-          // Assuming each item has { id, name } fields
-          setSalesmen(json.data.map((e: any) => ({
-            id: e.id,
-            name: e.name,
-          })));
+          // json.data is an array of { name, phone }
+          console.log(json.data);
+          setSalesmen(json.data as { firstName: string; phone: string }[]);
         }
       } catch (err) {
         console.error('Failed to fetch salesmen', err);
       }
     };
-
     fetchSalesmen();
   }, []);
 
 
+  const [discountType, setDiscountType] = useState<'Fixed' | 'Percent'>('Fixed');
+  const [discountValue, setDiscountValue] = useState<number>(0);
+  const [vatValue, setVatValue] = useState<number>(0);
+
+  const totalMRP = useMemo(
+    () => products.reduce((sum, p) => sum + p.unitPrice * p.quantity, 0),
+    [products]
+  );
+
+  const totalItems = useMemo(() => products.length, [products]);
+
+  const totalQuantity = useMemo(
+    () => products.reduce((sum, p) => sum + p.quantity, 0),
+    [products]
+  );
+
+  // Calculate final payable:
+  const vatAmount = useMemo(
+    () => (totalMRP * vatValue) / 100,
+    [totalMRP, vatValue]
+  );
+
+  // Final payable: MRP + VAT amount − discount (flat)
+  const payableAmount = useMemo(
+    () => totalMRP + vatAmount - discountValue,
+    [totalMRP, vatAmount, discountValue]
+  );
+
   return (
     <>
       <div className="min-h-screen bg-gray-50 p-6">
+        {alertMessage && (
+          <div className="mb-4 px-4 py-2 bg-red-100 border border-red-400 text-red-700 rounded">
+            {alertMessage}
+          </div>
+        )}
+
         <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
 
           {/* ─── Left Column: Inputs & Products ──────────────────────────── */}
@@ -156,20 +205,35 @@ function App() {
                 {/* Salesperson */}
                 <div>
                   <label className="block text-sm font-medium text-gray-600">Select Sales Person*</label>
-                  <select title='salesperson' className="mt-1 w-full border rounded px-3 py-2">
-                    <option value="">— Select —</option>
-                    {/* …options */}
-                    <option value="1">Rifat</option>
-                    <option value="2">Karim</option>
+                  <select
+                    title='salesperson'
+                    value={selectedSalesmanPhone}
+                    onChange={(e) => setSelectedSalesmanPhone(e.target.value)}
+                    className="mt-1 w-full border rounded px-3 py-2"
+                  >
+                    <option value="" disabled>
+                      — Select a salesperson —
+                    </option>
+                    {salesmen.map((s) => (
+                      <option key={s.phone} value={s.phone}>
+                        {s.firstName} ({s.phone})
+                      </option>
+                    ))}
                   </select>
                 </div>
 
-                {/* Discount Type */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-600">Select Discount Type</label>
-                  <select title='discount' className="mt-1 w-full border rounded px-3 py-2">
-                    <option>Fixed</option>
-                    <option>Percent</option>
+                <div className="col-span-1 md:col-span-1">
+                  <label className="block text-sm font-medium text-gray-600 mb-1">
+                    Discount Type
+                  </label>
+                  <select
+                    title='discountType'
+                    value={discountType}
+                    onChange={(e) => setDiscountType(e.target.value as 'Fixed' | 'Percent')}
+                    className="mt-1 w-full border rounded px-3 py-2"
+                  >
+                    <option value="Fixed">Fixed</option>
+                    <option value="Percent">Percent</option>
                   </select>
                 </div>
 
@@ -184,22 +248,32 @@ function App() {
                 </div>
 
                 {/* Discount Amount */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-600">Enter Discount Amount</label>
+                <div className="col-span-1 md:col-span-1">
+                  <label className="block text-sm font-medium text-gray-600 mb-1">
+                    Discount Amount
+                  </label>
                   <input
-                    type="text"
-                    placeholder="Enter the discount amount"
+                    type="number"
+                    min={0}
+                    value={discountValue}
+                    onChange={(e) => setDiscountValue(Number(e.target.value))}
                     className="mt-1 w-full border rounded px-3 py-2"
+                    placeholder={discountType === 'Percent' ? '%' : 'Fixed amount'}
                   />
                 </div>
 
                 {/* VAT Amount */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-600">Enter The VAT Amount</label>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">
+                    VAT Amount (in %)
+                  </label>
                   <input
-                    type="text"
-                    placeholder="Enter the VAT amount"
+                    type="number"
+                    min={0}
+                    value={vatValue}
+                    onChange={(e) => setVatValue(Number(e.target.value))}
                     className="mt-1 w-full border rounded px-3 py-2"
+                    placeholder="Enter VAT"
                   />
                 </div>
               </div>
@@ -298,27 +372,31 @@ function App() {
               <div className="space-y-2 mb-4">
                 <div className="flex justify-between text-sm">
                   <span>Maximum Retail Price (MRP)</span>
-                  <span>4000.00₺</span>
+                  <span>{totalMRP.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span>(+) Vat/Tax</span>
-                  <span>0.00₺</span>
+                  <span>(+) Vat/Tax %</span>
+                  <span>{vatAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>(−) Discount</span>
-                  <span>0.00₺</span>
+                  <span>
+                    {discountType === 'Percent'
+                      ? `${discountValue}%`
+                      : discountValue.toFixed(2)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Number Of Items</span>
-                  <span>3</span>
+                  <span>{totalItems}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Total Items Quantity</span>
-                  <span>6</span>
+                  <span>{totalQuantity}</span>
                 </div>
                 <div className="flex justify-between font-medium">
                   <span>Total Payable Amount</span>
-                  <span>4000.00₺</span>
+                  <span>{payableAmount.toFixed(2)}</span>
                 </div>
               </div>
 
