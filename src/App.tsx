@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import './App.css'
 
 
@@ -29,7 +29,9 @@ function App() {
     return () => clearTimeout(timer);
   }, [alertMessage]);
 
-  
+  const [invoiceNo, setInvoiceNo] = useState('010520250001');
+  const [holdList, setHoldList] = useState<any[]>([]);
+  const [showHoldModal, setShowHoldModal] = useState(false);
 
   // SKU input
   const [skuInput, setSkuInput] = useState('');
@@ -168,13 +170,68 @@ function App() {
   ) =>
     setPayments((prev) =>
       prev.map((p, i) =>
-        i === idx ? { ...p, [field]: value as any } : p
+        i === idx ? { ...p, [field]: field === 'amount' ? value : value as Payment['method'] } : p
       )
     );
 
+
+  const nextInvoice = (current: string) => {
+    // 010520250001
+    const prefix = current.slice(0, 8);
+    const seq = Number(current.slice(8)) + 1;
+    return prefix + seq.toString().padStart(4, '0');
+  };
+
+  const handleAddPOS = () => {
+    setAlertMessage('✅ Product sold successfully!');
+  };
+
+  const handleHold = () => {
+    // Build current sale payload
+    const sale = {
+      invoiceNo,
+      salesman: selectedSalesmanPhone,
+      products,
+      payments,
+      totals: { payableAmount },
+    };
+
+    // Add to hold list
+    setHoldList((prev) => [...prev, sale]);
+
+    // Clear screen
+    setProducts([]);
+    setPayments([{ method: 'Cash', amount: '' }]);
+    setDiscountValue(0);
+    setVatValue(0);
+    setSelectedSalesmanPhone('');
+    // Increment invoice
+    setInvoiceNo(nextInvoice(invoiceNo));
+  };
+
+  const handleShowHoldList = () => setShowHoldModal(true);
+  const handleCloseHoldList = () => setShowHoldModal(false);
+
+  const handleRetrieve = (idx: number) => {
+    const sale = holdList[idx];
+    // Load into form
+    setInvoiceNo(sale.invoiceNo);
+    setSelectedSalesmanPhone(sale.salesman);
+    setProducts(sale.products);
+    setPayments(sale.payments);
+    // Remove from hold list
+    setHoldList((prev) => prev.filter((_, i) => i !== idx));
+    setShowHoldModal(false);
+  };
+
+  const handleDeleteHold = (idx: number) => {
+    setHoldList((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+
   return (
     <>
-      <div className="min-h-screen bg-gray-50 p-6">
+      <div className="min-h-screen p-6">
         {alertMessage && (
           <div className="mb-4 px-4 py-2 bg-red-100 border border-red-400 text-red-700 rounded">
             {alertMessage}
@@ -192,12 +249,14 @@ function App() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {/* Invoice Number */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-600">Invoice Number</label>
+                  <label className="block text-sm font-medium text-gray-600">
+                    Invoice Number
+                  </label>
                   <input
+                    title='invoiceNo'
                     type="text"
-                    placeholder="010520250001"
-                    className="mt-1 w-full border rounded px-3 py-2"
-                    value=""
+                    className="mt-1 w-full border rounded px-3 py-2 bg-gray-100 cursor-not-allowed"
+                    value={invoiceNo}        // <-- bind to state
                     readOnly
                   />
                 </div>
@@ -453,6 +512,7 @@ function App() {
 
                     {/* Method dropdown */}
                     <select
+                      title='method'
                       value={pmt.method}
                       onChange={(e) => updatePayment(idx, 'method', e.target.value)}
                       className="flex-1 border rounded px-3 py-2"
@@ -502,20 +562,78 @@ function App() {
 
               {/* Buttons */}
               <div className="mt-6 flex flex-wrap gap-2">
-                <button className="bg-red-600 text-white px-4 py-2 rounded">Cancel &amp; Clear</button>
-                <button className="bg-green-600 text-white px-4 py-2 rounded">Add POS</button>
-                <button className="bg-gray-800 text-white px-4 py-2 rounded">Hold</button>
-                <button className="bg-red-700 text-white px-4 py-2 rounded">Hold List</button>
-                <button className="bg-gray-400 text-white px-4 py-2 rounded">SMS</button>
-                <button className="bg-gray-400 text-white px-4 py-2 rounded">Quotation</button>
-                <button className="bg-gray-400 text-white px-4 py-2 rounded">Reattempt</button>
-                <button className="bg-gray-800 text-white px-4 py-2 rounded">Reprint</button>
+                <div className='flex flex-row gap-5 flex-wrap basis-full justify-around'>
+                  <button className="bg-red-600 text-white px-4 py-2 rounded">Cancel &amp; Clear</button>
+                  <button onClick={handleAddPOS} className="bg-green-600 text-white px-4 py-2 rounded">Add POS</button>
+                </div>
+                <div className='mt-5 flex flex-row gap-5 flex-wrap justify-between text-center'>
+                  <button onClick={handleHold} className="bg-gray-800 text-white px-4 py-2 rounded">Hold</button>
+                  <button onClick={handleShowHoldList} className="bg-red-700 text-white px-4 py-2 rounded">Hold List</button>
+                  <button className="bg-gray-400 text-white px-4 py-2 rounded">SMS</button>
+                  <button className="bg-gray-400 text-white px-4 py-2 rounded">Quotation</button>
+                  <button className="bg-gray-400 text-white px-4 py-2 rounded">Reattempt</button>
+                  <button className="bg-gray-800 text-white px-4 py-2 rounded">Reprint</button>
+                </div>
               </div>
             </section>
 
           </div>
         </div>
       </div>
+
+
+      {showHoldModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center">
+          <div className="bg-white rounded shadow-lg w-3/4 max-w-xl p-6">
+            <h2 className="text-lg font-semibold mb-4">Held Sales</h2>
+            <div className="space-y-4 max-h-96 overflow-auto">
+              {holdList.length === 0 && (
+                <p className="text-sm text-gray-600">No held items.</p>
+              )}
+              {holdList.map((sale, idx) => (
+                <div
+                  key={idx}
+                  className="border rounded p-3 flex justify-between items-start"
+                >
+                  <div>
+                    <p><strong>Invoice:</strong> {sale.invoiceNo}</p>
+                    <p><strong>Salesman:</strong> {sale.salesman}</p>
+                    <p>
+                      <strong>Products:</strong> {sale.products.length} items
+                    </p>
+                  </div>
+                  <div className="flex flex-col space-y-1">
+                    <button
+                      type='submit'
+                      onClick={() => handleRetrieve(idx)}
+                      className="text-blue-600 hover:underline"
+                    >
+                      Retrieve
+                    </button>
+                    <button
+                      type='submit'
+                      onClick={() => handleDeleteHold(idx)}
+                      className="text-red-600 hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 text-right">
+              <button
+                type='submit'
+                onClick={handleCloseHoldList}
+                className="px-4 py-2 bg-gray-300 rounded"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </>
   )
 }
