@@ -14,6 +14,11 @@ type Product = {
   subTotal: number;
 };
 
+type Payment = {
+  method: 'Cash' | 'Bkash' | 'Eastern Bank';
+  amount: string;
+};
+
 
 function App() {
 
@@ -24,6 +29,7 @@ function App() {
     return () => clearTimeout(timer);
   }, [alertMessage]);
 
+  
 
   // SKU input
   const [skuInput, setSkuInput] = useState('');
@@ -42,7 +48,7 @@ function App() {
       setAlertMessage('Product already added');
       return;
     }
-    
+
     try {
       const res = await fetch(
         `https://front-end-task-lake.vercel.app/api/v1/purchase/get-purchase-single?search=${skuInput}`,
@@ -143,6 +149,28 @@ function App() {
     () => totalMRP + vatAmount - discountValue,
     [totalMRP, vatAmount, discountValue]
   );
+
+  // Payment rows state
+  const [payments, setPayments] = useState<Payment[]>([
+    { method: 'Cash', amount: '' },
+  ]);
+
+  const addPaymentRow = () =>
+    setPayments((prev) => [...prev, { method: 'Cash', amount: '' }]);
+
+  const removePaymentRow = (idx: number) =>
+    setPayments((prev) => prev.filter((_, i) => i !== idx));
+
+  const updatePayment = (
+    idx: number,
+    field: keyof Payment,
+    value: string
+  ) =>
+    setPayments((prev) =>
+      prev.map((p, i) =>
+        i === idx ? { ...p, [field]: value as any } : p
+      )
+    );
 
   return (
     <>
@@ -402,33 +430,73 @@ function App() {
 
               {/* Payments */}
               <div className="space-y-4">
-                {/* Repeat for each payment row */}
-                <div className="flex items-center space-x-2">
-                  <button className="p-1 border rounded">＋</button>
-                  <select title='salesperson' className="flex-1 border rounded px-3 py-2">
-                    <option>Choose The Method...</option>
-                  </select>
-                  <input
-                    type="text"
-                    className="w-32 border rounded px-3 py-2"
-                    placeholder="Enter Payment Amount"
-                  />
-                </div>
+                {payments.map((pmt, idx) => (
+                  <div key={idx} className="flex items-center space-x-2">
+                    {/* + on first row, delete on subsequent rows */}
+                    {idx === 0 ? (
+                      <button
+                        type="button"
+                        onClick={addPaymentRow}
+                        className="p-1 border rounded text-green-600 hover:bg-green-50"
+                      >
+                        ＋
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => removePaymentRow(idx)}
+                        className="p-1 border rounded text-red-600 hover:bg-red-50"
+                      >
+                        🗑️
+                      </button>
+                    )}
+
+                    {/* Method dropdown */}
+                    <select
+                      value={pmt.method}
+                      onChange={(e) => updatePayment(idx, 'method', e.target.value)}
+                      className="flex-1 border rounded px-3 py-2"
+                    >
+                      <option value="Cash">Cash</option>
+                      <option value="Bkash">Bkash</option>
+                      <option value="Eastern Bank">Eastern Bank</option>
+                    </select>
+
+                    {/* Amount input */}
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="Enter Amount"
+                      value={pmt.amount}
+                      onChange={(e) => updatePayment(idx, 'amount', e.target.value)}
+                      className="w-32 border rounded px-3 py-2"
+                    />
+                  </div>
+                ))}
               </div>
 
               {/* Additional info & actions */}
               <div className="mt-6 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span>Payable Amount</span>
-                  <span>4000.00₺</span>
+                  <span>{payableAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Total Received Amount</span>
-                  <span>5000.00₺</span>
+                  <span>
+                    {payments
+                      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+                      .toFixed(2)
+                    }
+                  </span>
                 </div>
                 <div className="flex justify-between font-medium">
                   <span>Change</span>
-                  <span>1000.00₺</span>
+                  <span>
+                    {(payments.reduce((sum, p) => sum + Number(p.amount || 0), 0) -
+                      payableAmount
+                    ).toFixed(2)}
+                  </span>
                 </div>
               </div>
 
