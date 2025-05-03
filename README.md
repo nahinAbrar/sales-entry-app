@@ -91,5 +91,13 @@ Implements SKU‑based product search, variant grouping, dynamic payments, hold/
 
 ---
 
-## 📂 Folder Structure
+## 🤝 Acknowledgements
+- Built as a Functional Front‑End Task for Tech Element IT Ltd., showcasing:
 
+- React + Vite + TypeScript
+
+- Tailwind CSS (v3.4.1)
+
+- REST API integration (SKU, employees, accounts, create‑sell)
+
+- Dynamic UI state management (hold/retrieve, payments, discounts, VAT)
