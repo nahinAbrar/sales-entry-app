@@ -228,10 +228,18 @@ function App() {
     [totalMRP, vatValue]
   );
 
+  // Derived discount amount (flat or percent of MRP)
+  const discountAmount = useMemo(() => {
+    if (discountType === 'Percent') {
+      return (totalMRP * discountValue) / 100;
+    }
+    return discountValue;
+  }, [discountType, discountValue, totalMRP]);
+
   // Final payable: MRP + VAT − flat discount
   const payableAmount = useMemo(
-    () => totalMRP + vatAmount - discountValue,
-    [totalMRP, vatAmount, discountValue]
+    () => totalMRP + vatAmount - discountAmount,
+    [totalMRP, vatAmount, discountAmount]
   );
 
   // Payment rows state
@@ -330,12 +338,11 @@ function App() {
 
     // 2. Flatten products into the API’s expected shape
     const productsForApi = products.flatMap((group) =>
-      // group by size already in your state, but you want one entry per variant
       group.variants.map((v) => ({
         variationProductId: v.id,
         quantity: 1,            // each variant counts as 1
         unitPrice: v.price,
-        discount: 0,            // if you have per‐item discount, replace 0
+        discount: 0,
         subTotal: v.price,      // quantity × unitPrice
       }))
     );
@@ -349,7 +356,7 @@ function App() {
       salesmenId: selectedSalesmanId,
       discountType,
       discount: discountValue,
-      phone: customerPhone,        // whatever state holds your phone
+      phone: customerPhone,
       totalPrice,
       totalPaymentAmount: totalReceived,
       changeAmount,
@@ -379,7 +386,7 @@ function App() {
       const json = await res.json();
       if (json.success) {
         setAlertMessage('✅ Product sold successfully!');
-        // Optionally reset your form here, e.g. clear products, payments, etc.
+
       } else {
         setAlertMessage('❌ Sell failed: ' + json.message);
       }
@@ -389,7 +396,6 @@ function App() {
     }
   };
 
-
   const handleClear = () => {
     setProducts([]);
     setPayments([{ accountId: 0, amount: '' }]);
@@ -397,7 +403,7 @@ function App() {
     setVatValue(0);
     setSelectedSalesmanId('');
     setInvoiceNo(nextInvoice(invoiceNo));
-    setCustomerPhone(''); // if you store customer phone
+    setCustomerPhone('');
   };
 
   return (
@@ -457,6 +463,7 @@ function App() {
                   <input
                     title='phone'
                     type="text"
+                    maxLength={11}
                     placeholder="01855271276"
                     className="mt-1 w-full border rounded px-3 py-2"
                     value={customerPhone}
@@ -522,7 +529,18 @@ function App() {
                     type="string"
                     min={0}
                     value={discountValue}
-                    onChange={(e) => setDiscountValue(Number(e.target.value))}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === '' || raw === '-') {
+                        setDiscountValue(0);
+                        return;
+                      }
+                      const num = Number(raw);
+                      if (!isNaN(num) && num >= 0) {
+                        setDiscountValue(num);
+                      }
+
+                    }}
                     className="mt-1 w-full border rounded px-3 py-2"
                     placeholder={discountType === 'Percent' ? '%' : 'Fixed amount'}
                   />
@@ -538,7 +556,17 @@ function App() {
                     type="stirng"
                     min={0}
                     value={vatValue}
-                    onChange={(e) => setVatValue(Number(e.target.value))}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === '' || raw === '-') {
+                        setVatValue(0);
+                        return;
+                      }
+                      const num = Number(raw);
+                      if (!isNaN(num) && num >= 0) {
+                        setVatValue(num);
+                      }
+                    }}
                     className="mt-1 w-full border rounded px-3 py-2"
                     placeholder="Enter VAT"
                   />
