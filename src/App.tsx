@@ -1,18 +1,21 @@
 import { useState, useEffect, useMemo } from 'react';
 import './App.css'
+import { FaTrash } from 'react-icons/fa';
 
-
-type Product = {
-  variationProductId: number;
+interface Variant {
+  id: number;
   sku: string;
-  productName: string;
   size: string;
+  price: number;
   stock: number;
-  unitPrice: number;
-  quantity: number;
-  discount: number;
-  subTotal: number;
-};
+  color: string | null;
+}
+
+interface GroupedProduct {
+  productName: string;
+  variants: Variant[];
+}
+
 
 type Payment = {
   accountId: number;
@@ -22,6 +25,8 @@ type Payment = {
 
 function App() {
 
+  const token = import.meta.env.VITE_API_TOKEN;
+
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   useEffect(() => {
     if (!alertMessage) return;
@@ -29,7 +34,15 @@ function App() {
     return () => clearTimeout(timer);
   }, [alertMessage]);
 
+  // Which SKU is pending removal?
+  const [pendingRemoval, setPendingRemoval] = useState<{
+    productName: string;
+    sku: string;
+    size: string;
+  } | null>(null);
+
   const [invoiceNo, setInvoiceNo] = useState('010520250001');
+  const [customerPhone, setCustomerPhone] = useState<string>('');
   const [holdList, setHoldList] = useState<any[]>([]);
   const [showHoldModal, setShowHoldModal] = useState(false);
 
@@ -37,91 +50,128 @@ function App() {
   const [skuInput, setSkuInput] = useState('');
 
   // List of added products
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<GroupedProduct[]>([]);
+
 
   // Barcode product search
   const handleAddBySku = async () => {
-    if (!skuInput.trim()) return;
-
     const sku = skuInput.trim();
-
-    // 1️⃣ Check for duplicate before even calling the API
-    if (products.some((p) => p.sku === sku)) {
-      setAlertMessage('Product already added');
-      return;
-    }
+    if (!sku) return;
 
     try {
       const res = await fetch(
-        `https://front-end-task-lake.vercel.app/api/v1/purchase/get-purchase-single?search=${skuInput}`,
-        {
-          headers: {
-            Authorization: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NCwibmFtZSI6IkthbXJ1bCIsImVtYWlsIjoiaGVhZG9mZmljZUBnbWFpbC5jb20iLCJhZGRyZXNzIjpudWxsLCJwaG9uZSI6IjAxOTQ1NTE4OTgiLCJyb2xlIjoiTUFOQUdFUiIsImF2YXRhciI6Imh0dHBzOi8vcmVzLmNsb3VkaW5hcnkuY29tL2Ryb3lqaXF3Zi9pbWFnZS91cGxvYWQvdjE2OTY4MDE4MjcvZG93bmxvYWRfZDZzOGJpLmpwZyIsImJyYW5jaCI6MywiYnJhbmNoSW5mbyI6eyJpZCI6MywiYnJhbmNoTmFtZSI6IkhlYWQgT2ZmaWNlIiwiYnJhbmNoTG9jYXRpb24iOiJCYXNodW5kaGFyYSIsImR1ZSI6MCwiYWRkcmVzcyI6IkJhc2h1bmRoYXJhIGNpdHkiLCJwaG9uZSI6IjAxOTQ1NTUxODkyOCIsImhvdGxpbmUiOiIwMTk0NTM2MzU1MiIsImVtYWlsIjoiaGVhZG9mZmljZUBnbWFpbC5jb20iLCJvcGVuSG91cnMiOm51bGwsImNsb3NpbmdIb3VycyI6bnVsbCwiaXNBZGp1c3RtZW50Ijp0cnVlLCJ0eXBlIjoiSGVhZE9mZmljZSJ9LCJpYXQiOjE3NDYwNDE0NzUsImV4cCI6MTc0NzMzNzQ3NX0.PUQfy4Vc2OorR6Yc9JO6lePwiXi20q0MppcIDxGtbsk',
-          },
-        }
+        `https://front-end-task-lake.vercel.app/api/v1/purchase/get-purchase-single?search=${sku}`,
+        { headers: { Authorization: `Bearer ${token}` } }
       );
       const json = await res.json();
-
-      if (json.success && json.data.length > 0) {
-        const item = json.data[0];
-        const newProduct: Product = {
-          variationProductId: item.id,
-          sku: item.sku,
-          productName: item.productName,
-          size: item.size,
-          stock: item.stock,
-          unitPrice: item.sellPrice,
-          quantity: 1,
-          discount: item.discountPrice - item.sellPrice, // or 0
-          subTotal: item.sellPrice,
-        };
-
-        // Avoid duplicates: filter out any with same variationProductId
-        setProducts((prev) => [
-          ...prev.filter((p) => p.variationProductId !== newProduct.variationProductId),
-          newProduct,
-        ]);
-
-        setSkuInput(''); // clear input
-      } else {
-        alert('SKU not found');
+      console.log(json.data)
+      if (!json.success || json.data.length === 0) {
+        setAlertMessage('SKU not found');
+        return;
       }
+
+      const item = json.data[0];
+      const variant: Variant = {
+        id: item.id,
+        sku: item.sku,
+        size: item.size,
+        price: item.discountPrice,
+        stock: item.stock,
+      };
+      const name = item.productName;
+
+      setProducts((prev) => {
+        // Find if this product group already exists
+        const idx = prev.findIndex((p) => p.productName === name);
+        if (idx > -1) {
+          // Already grouped: check for duplicate variant
+          if (prev[idx].variants.some((v) => v.sku === sku)) {
+            setAlertMessage('Product already added');
+            return prev;
+          }
+          // Append to variants
+          const updated = [...prev];
+          updated[idx] = {
+            ...updated[idx],
+            variants: [...updated[idx].variants, variant],
+          };
+          return updated;
+        } else {
+          // New product group
+          return [...prev, { productName: name, variants: [variant] }];
+        }
+      });
+
+      setSkuInput('');
     } catch (err) {
       console.error(err);
-      alert('Error fetching SKU');
+      setAlertMessage('Error fetching SKU');
     }
   };
 
-  // at top of App.tsx
-  const [salesmen, setSalesmen] = useState<
-    { firstName: string; phone: string }[]
-  >([]);
-  const [selectedSalesmanPhone, setSelectedSalesmanPhone] = useState<string>("");
+  const handleRemoveSku = (
+    productName: string,
+    sku: string,
+    size: string
+  ) => {
+    setProducts((prev) =>
+      prev
+        .map((group) =>
+          group.productName === productName
+            ? {
+              ...group,
+              variants: group.variants.filter(
+                (v) => !(v.sku === sku && v.size === size)
+              ),
+            }
+            : group
+        )
+        .filter((group) => group.variants.length > 0)
+    );
+  };
 
-  // getting salesman FirstName and Phone
+  // Remove an entire size‐group (all variants of that size)
+  const handleRemoveSizeGroup = (productName: string, size: string) => {
+    setProducts((prev) =>
+      prev
+        .map((group) =>
+          group.productName === productName
+            ? {
+              ...group,
+              variants: group.variants.filter((v) => v.size !== size),
+            }
+            : group
+        )
+        .filter((group) => group.variants.length > 0)
+    );
+  };
+
+  const [salesmen, setSalesmen] = useState<
+    { id: number; firstName: string; phone: string }[]
+  >([]);
+  const [selectedSalesmanId, setSelectedSalesmanId] = useState<number | "">("");
+
+  // getting salesman id, firstName, phone
   useEffect(() => {
-    const fetchSalesmen = async () => {
-      try {
-        const res = await fetch(
-          'https://front-end-task-lake.vercel.app/api/v1/employee/get-employee-all',
-          {
-            headers: {
-              Authorization: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NCwibmFtZSI6IkthbXJ1bCIsImVtYWlsIjoiaGVhZG9mZmljZUBnbWFpbC5jb20iLCJhZGRyZXNzIjpudWxsLCJwaG9uZSI6IjAxOTQ1NTE4OTgiLCJyb2xlIjoiTUFOQUdFUiIsImF2YXRhciI6Imh0dHBzOi8vcmVzLmNsb3VkaW5hcnkuY29tL2Ryb3lqaXF3Zi9pbWFnZS91cGxvYWQvdjE2OTY4MDE4MjcvZG93bmxvYWRfZDZzOGJpLmpwZyIsImJyYW5jaCI6MywiYnJhbmNoSW5mbyI6eyJpZCI6MywiYnJhbmNoTmFtZSI6IkhlYWQgT2ZmaWNlIiwiYnJhbmNoTG9jYXRpb24iOiJCYXNodW5kaGFyYSIsImR1ZSI6MCwiYWRkcmVzcyI6IkJhc2h1bmRoYXJhIGNpdHkiLCJwaG9uZSI6IjAxOTQ1NTUxODkyOCIsImhvdGxpbmUiOiIwMTk0NTM2MzU1MiIsImVtYWlsIjoiaGVhZG9mZmljZUBnbWFpbC5jb20iLCJvcGVuSG91cnMiOm51bGwsImNsb3NpbmdIb3VycyI6bnVsbCwiaXNBZGp1c3RtZW50Ijp0cnVlLCJ0eXBlIjoiSGVhZE9mZmljZSJ9LCJpYXQiOjE3NDYwNDE0NzUsImV4cCI6MTc0NzMzNzQ3NX0.PUQfy4Vc2OorR6Yc9JO6lePwiXi20q0MppcIDxGtbsk',
-            },
-          }
-        );
-        const json = await res.json();
-        if (json.success) {
-          // json.data is an array of { name, phone }
-          console.log(json.data);
-          setSalesmen(json.data as { firstName: string; phone: string }[]);
-        }
-      } catch (err) {
-        console.error('Failed to fetch salesmen', err);
+    fetch(
+      'https://front-end-task-lake.vercel.app/api/v1/employee/get-employee-all',
+      {
+        headers: { Authorization: `Bearer ${token}` },
       }
-    };
-    fetchSalesmen();
-  }, []);
+    )
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) {
+          setSalesmen(
+            json.data.map((e: any) => ({
+              id: e.id,
+              firstName: e.firstName,
+              phone: e.phone,
+            }))
+          );
+        }
+      });
+  }, [token]);
 
   const [accounts, setAccounts] = useState<{ id: number; bankName: string }[]>([]);
 
@@ -130,7 +180,7 @@ function App() {
       'https://front-end-task-lake.vercel.app/api/v1/account/get-accounts?type=All',
       {
         headers: {
-          Authorization: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NCwibmFtZSI6IkthbXJ1bCIsImVtYWlsIjoiaGVhZG9mZmljZUBnbWFpbC5jb20iLCJhZGRyZXNzIjpudWxsLCJwaG9uZSI6IjAxOTQ1NTE4OTgiLCJyb2xlIjoiTUFOQUdFUiIsImF2YXRhciI6Imh0dHBzOi8vcmVzLmNsb3VkaW5hcnkuY29tL2Ryb3lqaXF3Zi9pbWFnZS91cGxvYWQvdjE2OTY4MDE4MjcvZG93bmxvYWRfZDZzOGJpLmpwZyIsImJyYW5jaCI6MywiYnJhbmNoSW5mbyI6eyJpZCI6MywiYnJhbmNoTmFtZSI6IkhlYWQgT2ZmaWNlIiwiYnJhbmNoTG9jYXRpb24iOiJCYXNodW5kaGFyYSIsImR1ZSI6MCwiYWRkcmVzcyI6IkJhc2h1bmRoYXJhIGNpdHkiLCJwaG9uZSI6IjAxOTQ1NTUxODkyOCIsImhvdGxpbmUiOiIwMTk0NTM2MzU1MiIsImVtYWlsIjoiaGVhZG9mZmljZUBnbWFpbC5jb20iLCJvcGVuSG91cnMiOm51bGwsImNsb3NpbmdIb3VycyI6bnVsbCwiaXNBZGp1c3RtZW50Ijp0cnVlLCJ0eXBlIjoiSGVhZE9mZmljZSJ9LCJpYXQiOjE3NDYwNDE0NzUsImV4cCI6MTc0NzMzNzQ3NX0.PUQfy4Vc2OorR6Yc9JO6lePwiXi20q0MppcIDxGtbsk',
+          Authorization: `Bearer ${token}`,
         },
       }
     )
@@ -140,32 +190,41 @@ function App() {
           setAccounts(json.data as { id: number; bankName: string }[]);
         }
       });
-  }, []);
+  }, [token]);
 
 
   const [discountType, setDiscountType] = useState<'Fixed' | 'Percent'>('Fixed');
   const [discountValue, setDiscountValue] = useState<number>(0);
   const [vatValue, setVatValue] = useState<number>(0);
 
+  // Total MRP is the sum of all variant prices
   const totalMRP = useMemo(
-    () => products.reduce((sum, p) => sum + p.unitPrice * p.quantity, 0),
+    () =>
+      products.reduce(
+        (sumGroup, group) =>
+          sumGroup + group.variants.reduce((sumV, v) => sumV + v.price, 0),
+        0
+      ),
     [products]
   );
 
+  // Number of distinct product groups
   const totalItems = useMemo(() => products.length, [products]);
 
+  // Total quantity is total number of variants across all groups
   const totalQuantity = useMemo(
-    () => products.reduce((sum, p) => sum + p.quantity, 0),
+    () =>
+      products.reduce((sumGroup, group) => sumGroup + group.variants.length, 0),
     [products]
   );
 
-  // Calculate final payable:
+  // VAT amount: percentage of totalMRP
   const vatAmount = useMemo(
     () => (totalMRP * vatValue) / 100,
     [totalMRP, vatValue]
   );
 
-  // Final payable: MRP + VAT amount − discount (flat)
+  // Final payable: MRP + VAT − flat discount
   const payableAmount = useMemo(
     () => totalMRP + vatAmount - discountValue,
     [totalMRP, vatAmount, discountValue]
@@ -209,62 +268,14 @@ function App() {
     return prefix + seq.toString().padStart(4, '0');
   };
 
-  const handleAddPOS = async () => {
-    // assemble your body from current state
-    const body = {
-      invoiceNo,
-      salesmenId: 1212,
-      discountType,
-      discount: discountValue,
-      phone: 1212,
-      totalPrice: totalMRP,
-      totalPaymentAmount: payments.reduce((sum, p) => sum + Number(p.amount), 0),
-      changeAmount:
-        payments.reduce((sum, p) => sum + Number(p.amount), 0) - payableAmount,
-      vat: vatValue,
-      products: products.map((p) => ({
-        variationProductId: p.variationProductId,
-        quantity: p.quantity,
-        unitPrice: p.unitPrice,
-        discount: p.discount,
-        subTotal: p.subTotal,
-      })),
-      payments: payments.map((p) => ({
-        paymentAmount: Number(p.amount),
-        accountId: p.accountId,
-      })),
-      sku: products.map((p) => p.sku),
-    };
 
-    try {
-      const res = await fetch(
-        'https://front-end-task-lake.vercel.app/api/v1/sell/create-sell',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: 'Bearer <your-token-here>',
-          },
-          body: JSON.stringify(body),
-        }
-      );
-      const json = await res.json();
-      if (json.success) {
-        setAlertMessage('✅ Product sold successfully!');
-        // you can also reset form here if desired
-      } else {
-        setAlertMessage('❌ Sell failed: ' + json.message);
-      }
-    } catch (err) {
-      console.error(err);
-      setAlertMessage('❌ Network error on sell');
-    }
-  };
   const handleHold = () => {
-    // Build current sale payload
+    // Get matched salesman object
+    const matchedSalesman = salesmen.find((s) => s.id === selectedSalesmanId);
+
     const sale = {
       invoiceNo,
-      salesman: selectedSalesmanPhone,
+      salesman: matchedSalesman?.firstName || '', // ✅ save firstName
       products,
       payments,
       totals: { payableAmount },
@@ -278,7 +289,7 @@ function App() {
     setPayments([{ accountId: 0, amount: '' }]);
     setDiscountValue(0);
     setVatValue(0);
-    setSelectedSalesmanPhone('');
+    setSelectedSalesmanId('');
     setInvoiceNo(nextInvoice(invoiceNo));
   };
 
@@ -287,12 +298,15 @@ function App() {
 
   const handleRetrieve = (idx: number) => {
     const sale = holdList[idx];
-    // Load into form
+
+    // Lookup ID from firstName
+    const matchedSalesman = salesmen.find((s) => s.firstName === sale.salesman);
+
     setInvoiceNo(sale.invoiceNo);
-    setSelectedSalesmanPhone(sale.salesman);
+    setSelectedSalesmanId(matchedSalesman?.id || ''); // ✅ restore ID
     setProducts(sale.products);
     setPayments(sale.payments);
-    // Remove from hold list
+
     setHoldList((prev) => prev.filter((_, i) => i !== idx));
     setShowHoldModal(false);
   };
@@ -301,6 +315,86 @@ function App() {
     setHoldList((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const handleAddPOS = async () => {
+    // 1. Compute totals
+    const totalPrice = totalMRP; // sum of all variant prices
+    const totalReceived = payments.reduce(
+      (sum, p) => sum + Number(p.amount),
+      0
+    );
+    const changeAmount = totalReceived - payableAmount;
+
+    // 2. Flatten products into the API’s expected shape
+    const productsForApi = products.flatMap((group) =>
+      // group by size already in your state, but you want one entry per variant
+      group.variants.map((v) => ({
+        variationProductId: v.id,
+        quantity: 1,            // each variant counts as 1
+        unitPrice: v.price,
+        discount: 0,            // if you have per‐item discount, replace 0
+        subTotal: v.price,      // quantity × unitPrice
+      }))
+    );
+
+    // 3. Gather all SKUs
+    const skuList = products.flatMap((g) => g.variants.map((v) => v.sku));
+
+    // 4. Build the request body
+    const body = {
+      invoiceNo,
+      salesmenId: selectedSalesmanId,
+      discountType,
+      discount: discountValue,
+      phone: customerPhone,        // whatever state holds your phone
+      totalPrice,
+      totalPaymentAmount: totalReceived,
+      changeAmount,
+      vat: vatValue,
+      products: productsForApi,
+      payments: payments.map((p) => ({
+        paymentAmount: Number(p.amount),
+        accountId: p.accountId,
+      })),
+      sku: skuList,
+    };
+    console.log('Request body:', body);
+
+    // 5. POST to the API
+    try {
+      const res = await fetch(
+        'https://front-end-task-lake.vercel.app/api/v1/sell/create-sell',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(body),
+        }
+      );
+      const json = await res.json();
+      if (json.success) {
+        setAlertMessage('✅ Product sold successfully!');
+        // Optionally reset your form here, e.g. clear products, payments, etc.
+      } else {
+        setAlertMessage('❌ Sell failed: ' + json.message);
+      }
+    } catch (err) {
+      console.error(err);
+      setAlertMessage('❌ Network error on sell');
+    }
+  };
+
+
+  const handleClear = () => {
+    setProducts([]);
+    setPayments([{ accountId: 0, amount: '' }]);
+    setDiscountValue(0);
+    setVatValue(0);
+    setSelectedSalesmanId('');
+    setInvoiceNo(nextInvoice(invoiceNo));
+    setCustomerPhone(''); // if you store customer phone
+  };
 
   return (
     <>
@@ -359,6 +453,8 @@ function App() {
                     type="text"
                     placeholder="01855271276"
                     className="mt-1 w-full border rounded px-3 py-2"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
                   />
                 </div>
 
@@ -366,16 +462,18 @@ function App() {
                 <div>
                   <label className="block text-sm font-medium text-gray-600">Select Sales Person*</label>
                   <select
-                    title='salesperson'
-                    value={selectedSalesmanPhone}
-                    onChange={(e) => setSelectedSalesmanPhone(e.target.value)}
+                    title='salesmanId'
+                    value={selectedSalesmanId}
+                    onChange={(e) =>
+                      setSelectedSalesmanId(Number(e.target.value))
+                    }
                     className="mt-1 w-full border rounded px-3 py-2"
                   >
                     <option value="" disabled>
                       — Select a salesperson —
                     </option>
                     {salesmen.map((s) => (
-                      <option key={s.phone} value={s.phone}>
+                      <option key={s.id} value={s.id}>
                         {s.firstName} ({s.phone})
                       </option>
                     ))}
@@ -413,7 +511,7 @@ function App() {
                     Discount Amount
                   </label>
                   <input
-                    type="number"
+                    type="string"
                     min={0}
                     value={discountValue}
                     onChange={(e) => setDiscountValue(Number(e.target.value))}
@@ -428,7 +526,7 @@ function App() {
                     VAT Amount (in %)
                   </label>
                   <input
-                    type="number"
+                    type="stirng"
                     min={0}
                     value={vatValue}
                     onChange={(e) => setVatValue(Number(e.target.value))}
@@ -442,59 +540,115 @@ function App() {
             {/* 2. Products Information */}
             <section className="bg-white rounded shadow p-4">
               <h3 className="text-gray-700 font-semibold mb-4">Products Information</h3>
-              <div className="space-y-4">
-                {products.map((p) => (
-                  <div
-                    key={p.variationProductId}
-                    className="border rounded p-4 flex justify-between items-center"
-                  >
-                    <div className='grid justify-items-start'>
-                      <p className="text-sm"><strong>Name</strong>: {p.productName}</p>
-                      <p className="text-sm"><strong>Size</strong>: {p.size}</p>
-                      <p className="text-sm"><strong>Available Stock</strong>: {p.stock} Units</p>
-                      <p className="text-sm"><strong>SKU</strong>: {p.sku}</p>
-                    </div>
 
-                    <div className="flex items-center space-x-4">
-                      <input
-                        title='quantity'
-                        type="number"
-                        min={1}
-                        max={p.stock}
-                        value={p.quantity}
-                        onChange={(e) => {
-                          const qty = Number(e.target.value);
-                          setProducts((prev) =>
-                            prev.map((x) =>
-                              x.variationProductId === p.variationProductId
-                                ? {
-                                  ...x,
-                                  quantity: qty,
-                                  subTotal: qty * x.unitPrice - x.discount
-                                }
-                                : x
-                            )
-                          );
-                        }}
-                        className="border rounded px-3 py-2 w-20"
-                      />
-                      <p className="text-sm font-medium">
-                        {p.subTotal.toFixed(2)}₺
-                      </p>
-                      <button
-                        onClick={() =>
-                          setProducts((prev) =>
-                            prev.filter((x) => x.variationProductId !== p.variationProductId)
-                          )
-                        }
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        🗑️
-                      </button>
+              {products.length === 0 ? (
+                <p className="text-center text-sm text-gray-500 italic">
+                  Products have not been added yet
+                </p>
+              ) : (
+                products.map((group) => {
+                  // Build a map: size → variants[]
+                  const bySize = group.variants.reduce<Record<string, Variant[]>>(
+                    (acc, v) => {
+                      (acc[v.size] = acc[v.size] || []).push(v);
+                      return acc;
+                    },
+                    {}
+                  );
+
+                  return (
+                    <div key={group.productName} className="py-1 mb-2 px-1 rounded-xl bg-blue-100/50">
+                      {/* Product heading */}
+                      <h4 className="font-semibold text-gray-800 mb-2">
+                        {group.productName}
+                      </h4>
+
+                      {/* One row per size */}
+                      {Object.entries(bySize).map(([size, variants]) => {
+                        const qty = variants.length;
+                        const unitPrice = variants[0].price;
+                        const subtotal = qty * unitPrice;
+                        const stock = variants[0].stock;      // assuming same stock per variant
+                        const color = variants[0].color ?? 'Not found';
+
+                        return (
+                          <div
+                            key={size}
+                            className="flex items-center justify-between mb-4 border rounded p-4"
+                          >
+                            {/* Left: Details & SKU chips */}
+                            <div className="grid justify-items-start space-y-1">
+                              <p className="text-sm">
+                                <span className="font-medium">Name:</span> {group.productName}
+                              </p>
+                              <p className="text-sm">
+                                <span className="font-medium">Size:</span> {size}
+                              </p>
+                              <p className="text-sm">
+                                <span className="font-medium">Color:</span> {color}
+                              </p>
+                              <p className="text-sm">
+                                <span className="font-medium">Stock:</span> {stock}
+                              </p>
+
+                              <div className="flex flex-wrap gap-2 mt-2 items-center">
+                                <p className="text-sm">
+                                  <span className="font-medium">SKU:</span>
+                                </p>
+                                {variants.map((v) => (
+                                  <span
+                                    key={v.id}
+                                    className="px-2 py-1 border rounded border-[#243c5a] cursor-pointer hover:bg-red-700 hover:text-white text-sm"
+                                    onClick={() =>
+                                      setPendingRemoval({
+                                        productName: group.productName,
+                                        sku: v.sku,
+                                        size: size,
+                                      })
+                                    }
+                                  >
+                                    {v.sku}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Right: Qty · Unit Price · Subtotal */}
+                            <div className="flex items-center space-x-6 text-right">
+                              <div>
+                                <p className="text-sm text-gray-600">Qty</p>
+                                <p className="font-medium">{qty}</p>
+                              </div>
+                              <div>
+                                <p className="text-sm text-gray-600">Price</p>
+                                <p className="font-medium">
+                                  Tk. {unitPrice.toFixed(2)}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-sm text-gray-600">Subtotal</p>
+                                <p className="font-medium">
+                                  Tk. {subtotal.toFixed(2)}
+                                </p>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSizeGroup(group.productName, size)}
+                              className="ml-4 text-gray-500 hover:text-red-500"
+                              title="Remove all SKUs of this size"
+                            >
+                              <FaTrash className="w-5 h-5" />
+                            </button>
+
+                          </div>
+                        );
+                      })}
                     </div>
-                  </div>
-                ))}
-              </div>
+                  );
+                })
+              )}
             </section>
 
           </div>
@@ -564,7 +718,7 @@ function App() {
               {/* Payments */}
               <div className="space-y-4">
                 {payments.map((pmt, idx) => (
-                  <div key={idx} className="flex items-center space-x-2">
+                  <div key={idx} className="flex items-center space-x-2 text-sm">
                     {/* + on first row, delete on subsequent rows */}
                     {idx === 0 ? (
                       <button
@@ -644,7 +798,7 @@ function App() {
               {/* Buttons */}
               <div className="mt-6 flex flex-wrap gap-2">
                 <div className='flex flex-row gap-5 flex-wrap basis-full justify-around'>
-                  <button className="bg-red-600 text-white px-4 py-2 rounded">Cancel &amp; Clear</button>
+                  <button onClick={handleClear} className="bg-red-600 text-white px-4 py-2 rounded">Cancel &amp; Clear</button>
                   <button onClick={handleAddPOS} className="bg-green-600 text-white px-4 py-2 rounded">Add POS</button>
                 </div>
                 <div className='mt-5 flex flex-row gap-5 flex-wrap justify-between text-center'>
@@ -665,6 +819,7 @@ function App() {
 
       {showHoldModal && (
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center">
+
           <div className="bg-white rounded shadow-lg w-3/4 max-w-xl p-6">
             <h2 className="text-lg font-semibold mb-4">Held Sales</h2>
             <div className="space-y-4 max-h-96 overflow-auto">
@@ -676,7 +831,7 @@ function App() {
                   key={idx}
                   className="border rounded p-3 flex justify-between items-start"
                 >
-                  <div>
+                  <div className='grid justify-items-start'>
                     <p><strong>Invoice:</strong> {sale.invoiceNo}</p>
                     <p><strong>Salesman:</strong> {sale.salesman}</p>
                     <p>
@@ -687,14 +842,14 @@ function App() {
                     <button
                       type='submit'
                       onClick={() => handleRetrieve(idx)}
-                      className="text-blue-600 hover:underline"
+                      className="text-white hover:scale-90 bg-green-600 p-2 rounded-xl"
                     >
                       Retrieve
                     </button>
                     <button
                       type='submit'
                       onClick={() => handleDeleteHold(idx)}
-                      className="text-red-600 hover:underline"
+                      className="text-white hover:scale-90 bg-red-600 p-2 rounded-xl"
                     >
                       Delete
                     </button>
@@ -714,6 +869,39 @@ function App() {
           </div>
         </div>
       )}
+
+      {pendingRemoval && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-lg p-6 w-80">
+            <h4 className="text-lg font-semibold mb-4">Confirm Removal</h4>
+            <p className="mb-6 text-sm">
+              Remove SKU <strong>{pendingRemoval.sku}</strong> (Size: <strong>{pendingRemoval.size}</strong>)?
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setPendingRemoval(null)}
+                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  handleRemoveSku(
+                    pendingRemoval.productName,
+                    pendingRemoval.sku,
+                    pendingRemoval.size
+                  );
+                  setPendingRemoval(null);
+                }}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
     </>
   )
