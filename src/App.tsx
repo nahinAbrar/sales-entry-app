@@ -22,6 +22,11 @@ type Payment = {
   amount: string;
 };
 
+type Salesman = {
+  id: number;
+  firstName: string;
+  phone: string;
+};
 
 function App() {
 
@@ -77,6 +82,7 @@ function App() {
         size: item.size,
         price: item.discountPrice,
         stock: item.stock,
+        color: item.color,
       };
       const name = item.productName;
 
@@ -146,9 +152,7 @@ function App() {
     );
   };
 
-  const [salesmen, setSalesmen] = useState<
-    { id: number; firstName: string; phone: string }[]
-  >([]);
+  const [salesmen, setSalesmen] = useState<Salesman[]>([]);
   const [selectedSalesmanId, setSelectedSalesmanId] = useState<number | "">("");
 
   // getting salesman id, firstName, phone
@@ -163,7 +167,7 @@ function App() {
       .then((json) => {
         if (json.success) {
           setSalesmen(
-            json.data.map((e: any) => ({
+            json.data.map((e: Salesman) => ({
               id: e.id,
               firstName: e.firstName,
               phone: e.phone,
@@ -432,6 +436,7 @@ function App() {
                 <div>
                   <label className="block text-sm font-medium text-gray-600">Product Barcode*</label>
                   <input
+                    title='sku'
                     type="text"
                     value={skuInput}
                     onChange={(e) => setSkuInput(e.target.value)}
@@ -450,6 +455,7 @@ function App() {
                 <div>
                   <label className="block text-sm font-medium text-gray-600">Phone</label>
                   <input
+                    title='phone'
                     type="text"
                     placeholder="01855271276"
                     className="mt-1 w-full border rounded px-3 py-2"
@@ -499,6 +505,7 @@ function App() {
                 <div>
                   <label className="block text-sm font-medium text-gray-600">Membership id</label>
                   <input
+                    title='membershipId'
                     type="text"
                     placeholder="Membership id"
                     className="mt-1 w-full border rounded px-3 py-2"
@@ -511,6 +518,7 @@ function App() {
                     Discount Amount
                   </label>
                   <input
+                    title='discount'
                     type="string"
                     min={0}
                     value={discountValue}
@@ -526,6 +534,7 @@ function App() {
                     VAT Amount (in %)
                   </label>
                   <input
+                    title='vat'
                     type="stirng"
                     min={0}
                     value={vatValue}
@@ -670,11 +679,11 @@ function App() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-600">Membership</label>
-                  <input className="mt-1 w-full border rounded px-3 py-2" value="Not found" readOnly />
+                  <input title='notfound' className="mt-1 w-full border rounded px-3 py-2" value="Not found" readOnly />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-600">Discount</label>
-                  <input className="mt-1 w-full border rounded px-3 py-2" value="Not found" readOnly />
+                  <input title='notfound' className="mt-1 w-full border rounded px-3 py-2" value="Not found" readOnly />
                 </div>
               </div>
             </section>
@@ -759,6 +768,7 @@ function App() {
 
                     {/* Amount input */}
                     <input
+                      title='amount'
                       type="number"
                       min={0}
                       placeholder="Enter Amount"
