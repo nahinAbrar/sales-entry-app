@@ -15,7 +15,7 @@ type Product = {
 };
 
 type Payment = {
-  method: 'Cash' | 'Bkash' | 'Eastern Bank';
+  accountId: number;
   amount: string;
 };
 
@@ -123,6 +123,25 @@ function App() {
     fetchSalesmen();
   }, []);
 
+  const [accounts, setAccounts] = useState<{ id: number; bankName: string }[]>([]);
+
+  useEffect(() => {
+    fetch(
+      'https://front-end-task-lake.vercel.app/api/v1/account/get-accounts?type=All',
+      {
+        headers: {
+          Authorization: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NCwibmFtZSI6IkthbXJ1bCIsImVtYWlsIjoiaGVhZG9mZmljZUBnbWFpbC5jb20iLCJhZGRyZXNzIjpudWxsLCJwaG9uZSI6IjAxOTQ1NTE4OTgiLCJyb2xlIjoiTUFOQUdFUiIsImF2YXRhciI6Imh0dHBzOi8vcmVzLmNsb3VkaW5hcnkuY29tL2Ryb3lqaXF3Zi9pbWFnZS91cGxvYWQvdjE2OTY4MDE4MjcvZG93bmxvYWRfZDZzOGJpLmpwZyIsImJyYW5jaCI6MywiYnJhbmNoSW5mbyI6eyJpZCI6MywiYnJhbmNoTmFtZSI6IkhlYWQgT2ZmaWNlIiwiYnJhbmNoTG9jYXRpb24iOiJCYXNodW5kaGFyYSIsImR1ZSI6MCwiYWRkcmVzcyI6IkJhc2h1bmRoYXJhIGNpdHkiLCJwaG9uZSI6IjAxOTQ1NTUxODkyOCIsImhvdGxpbmUiOiIwMTk0NTM2MzU1MiIsImVtYWlsIjoiaGVhZG9mZmljZUBnbWFpbC5jb20iLCJvcGVuSG91cnMiOm51bGwsImNsb3NpbmdIb3VycyI6bnVsbCwiaXNBZGp1c3RtZW50Ijp0cnVlLCJ0eXBlIjoiSGVhZE9mZmljZSJ9LCJpYXQiOjE3NDYwNDE0NzUsImV4cCI6MTc0NzMzNzQ3NX0.PUQfy4Vc2OorR6Yc9JO6lePwiXi20q0MppcIDxGtbsk',
+        },
+      }
+    )
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) {
+          setAccounts(json.data as { id: number; bankName: string }[]);
+        }
+      });
+  }, []);
+
 
   const [discountType, setDiscountType] = useState<'Fixed' | 'Percent'>('Fixed');
   const [discountValue, setDiscountValue] = useState<number>(0);
@@ -154,11 +173,12 @@ function App() {
 
   // Payment rows state
   const [payments, setPayments] = useState<Payment[]>([
-    { method: 'Cash', amount: '' },
+    { accountId: 0, amount: '' },
   ]);
 
+
   const addPaymentRow = () =>
-    setPayments((prev) => [...prev, { method: 'Cash', amount: '' }]);
+    setPayments((prev) => [...prev, { accountId: 0, amount: '' }]);
 
   const removePaymentRow = (idx: number) =>
     setPayments((prev) => prev.filter((_, i) => i !== idx));
@@ -170,10 +190,17 @@ function App() {
   ) =>
     setPayments((prev) =>
       prev.map((p, i) =>
-        i === idx ? { ...p, [field]: field === 'amount' ? value : value as Payment['method'] } : p
+        i === idx
+          ? {
+            ...p,
+            [field]:
+              field === 'accountId'
+                ? Number(value)
+                : value
+          } as Payment
+          : p
       )
     );
-
 
   const nextInvoice = (current: string) => {
     // 010520250001
@@ -182,10 +209,57 @@ function App() {
     return prefix + seq.toString().padStart(4, '0');
   };
 
-  const handleAddPOS = () => {
-    setAlertMessage('✅ Product sold successfully!');
-  };
+  const handleAddPOS = async () => {
+    // assemble your body from current state
+    const body = {
+      invoiceNo,
+      salesmenId: 1212,
+      discountType,
+      discount: discountValue,
+      phone: 1212,
+      totalPrice: totalMRP,
+      totalPaymentAmount: payments.reduce((sum, p) => sum + Number(p.amount), 0),
+      changeAmount:
+        payments.reduce((sum, p) => sum + Number(p.amount), 0) - payableAmount,
+      vat: vatValue,
+      products: products.map((p) => ({
+        variationProductId: p.variationProductId,
+        quantity: p.quantity,
+        unitPrice: p.unitPrice,
+        discount: p.discount,
+        subTotal: p.subTotal,
+      })),
+      payments: payments.map((p) => ({
+        paymentAmount: Number(p.amount),
+        accountId: p.accountId,
+      })),
+      sku: products.map((p) => p.sku),
+    };
 
+    try {
+      const res = await fetch(
+        'https://front-end-task-lake.vercel.app/api/v1/sell/create-sell',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer <your-token-here>',
+          },
+          body: JSON.stringify(body),
+        }
+      );
+      const json = await res.json();
+      if (json.success) {
+        setAlertMessage('✅ Product sold successfully!');
+        // you can also reset form here if desired
+      } else {
+        setAlertMessage('❌ Sell failed: ' + json.message);
+      }
+    } catch (err) {
+      console.error(err);
+      setAlertMessage('❌ Network error on sell');
+    }
+  };
   const handleHold = () => {
     // Build current sale payload
     const sale = {
@@ -201,11 +275,10 @@ function App() {
 
     // Clear screen
     setProducts([]);
-    setPayments([{ method: 'Cash', amount: '' }]);
+    setPayments([{ accountId: 0, amount: '' }]);
     setDiscountValue(0);
     setVatValue(0);
     setSelectedSalesmanPhone('');
-    // Increment invoice
     setInvoiceNo(nextInvoice(invoiceNo));
   };
 
@@ -375,12 +448,13 @@ function App() {
                     key={p.variationProductId}
                     className="border rounded p-4 flex justify-between items-center"
                   >
-                    <div>
+                    <div className='grid justify-items-start'>
                       <p className="text-sm"><strong>Name</strong>: {p.productName}</p>
                       <p className="text-sm"><strong>Size</strong>: {p.size}</p>
                       <p className="text-sm"><strong>Available Stock</strong>: {p.stock} Units</p>
                       <p className="text-sm"><strong>SKU</strong>: {p.sku}</p>
                     </div>
+
                     <div className="flex items-center space-x-4">
                       <input
                         title='quantity'
@@ -513,13 +587,20 @@ function App() {
                     {/* Method dropdown */}
                     <select
                       title='method'
-                      value={pmt.method}
-                      onChange={(e) => updatePayment(idx, 'method', e.target.value)}
+                      value={pmt.accountId}
+                      onChange={(e) =>
+                        updatePayment(idx, 'accountId', e.target.value)
+                      }
                       className="flex-1 border rounded px-3 py-2"
                     >
-                      <option value="Cash">Cash</option>
-                      <option value="Bkash">Bkash</option>
-                      <option value="Eastern Bank">Eastern Bank</option>
+                      <option value={0} disabled>
+                        — Select Account —
+                      </option>
+                      {accounts.map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.bankName}
+                        </option>
+                      ))}
                     </select>
 
                     {/* Amount input */}
