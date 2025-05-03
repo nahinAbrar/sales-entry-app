@@ -836,16 +836,16 @@ function App() {
               {/* Buttons */}
               <div className="mt-6 flex flex-wrap gap-2">
                 <div className='flex flex-row gap-5 flex-wrap basis-full justify-around'>
-                  <button onClick={handleClear} className="bg-red-600 text-white px-4 py-2 rounded">Cancel &amp; Clear</button>
-                  <button onClick={handleAddPOS} className="bg-green-600 text-white px-4 py-2 rounded">Add POS</button>
+                  <button onClick={handleClear} className="bg-red-600 text-white text-sm px-4 py-2 rounded-xl">Cancel &amp; Clear</button>
+                  <button onClick={handleAddPOS} className="bg-green-600 text-white text-sm px-4 py-2 rounded-xl">Add POS</button>
                 </div>
                 <div className='mt-5 flex flex-row gap-5 flex-wrap justify-between text-center'>
-                  <button onClick={handleHold} className="bg-gray-800 text-white px-4 py-2 rounded">Hold</button>
-                  <button onClick={handleShowHoldList} className="bg-red-700 text-white px-4 py-2 rounded">Hold List</button>
-                  <button className="bg-gray-400 text-white px-4 py-2 rounded">SMS</button>
-                  <button className="bg-gray-400 text-white px-4 py-2 rounded">Quotation</button>
-                  <button className="bg-gray-400 text-white px-4 py-2 rounded">Reattempt</button>
-                  <button className="bg-gray-800 text-white px-4 py-2 rounded">Reprint</button>
+                  <button onClick={handleHold} className="bg-gray-800 text-white text-sm px-4 py-2 rounded">Hold</button>
+                  <button onClick={handleShowHoldList} className="bg-red-700 text-white text-sm px-4 py-2 rounded">Hold List</button>
+                  <button className="bg-gray-400 text-white text-sm px-4 py-2 rounded">SMS</button>
+                  <button className="bg-gray-400 text-white text-sm px-4 py-2 rounded">Quotation</button>
+                  <button className="bg-gray-400 text-white text-sm px-4 py-2 rounded">Reattempt</button>
+                  <button className="bg-gray-800 text-white text-sm px-4 py-2 rounded">Reprint</button>
                 </div>
               </div>
             </section>
